@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Table Saw Geometry Visualizer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- MathJax -->
+    <script>
+        window.MathJax = {
+            tex: { inlineMath: [['\\(', '\\)']] },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #e8f0ff, #f5f7fa);
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 860px;
+            width: 100%;
+            position: relative;
+        }
+
+        .lang-select {
+            position: absolute;
+            top: 18px;
+            right: 20px;
+            padding: 4px 8px;
+            font-size: 13px;
+            border-radius: 8px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0 16px 0;
+            border-radius: 10px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, #4a90e2, #357abd);
+            cursor: pointer;
+        }
+
+        canvas {
+            margin-top: 25px;
+            border-radius: 12px;
+            background: #f9fbff;
+            width: 100%;
+            height: auto;
+        }
+
+        .result {
+            margin-top: 18px;
+            font-weight: 600;
+            text-align: center;
+            font-size: 18px;
+        }
+
+        .result-number {
+            font-size: 28px;
+            font-weight: 700;
+            text-decoration: underline;
+        }
+
+        .formula {
+            color: #555;
+            font-size: 18px;
+            margin-top: 12px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+
+    <select id="lang" class="lang-select" onchange="setLanguage()">
+        <option value="fi" selected>FI</option>
+        <option value="en">EN</option>
+        <option value="de">DE</option>
+		<option value="es">ES</option>
+    </select>
+	<select id="units" class="lang-select" style="right:90px;" onchange="setUnits()">
+		<option value="metric">mm</option>
+		<option value="imperial">inch</option>
+	</select>
+
+    <h2 id="title"></h2>
+
+    <label id="bladeLabel"></label>
+    <input type="number" id="D" value="254" step="1">
+
+    <label id="thicknessLabel"></label>
+    <input type="number" id="T" value="50" step="0.01">
+
+    <label id="kLabel"></label>
+    <input type="number" id="k" value="5" step="0.01">
+
+    <button id="calcButton" onclick="calculate()"></button>
+
+    <div class="result" id="result"></div>
+
+    <div class="formula">
+        \( \Delta = \sqrt{k(D - k)} - \sqrt{(T + k)(D - T - k)} \)
+    </div>
+
+    <canvas id="canvas" width="820" height="520"></canvas>
+
+</div>
+
+<script>
+
+let unitSystem = "metric";
+
+function mmToInch(mm) {
+    return mm / 25.4;
+}
+
+function getUnitLabel() {
+    return unitSystem === "metric" ? " mm" : " in";
+}
+
+function setUnits() {
+
+    const newSystem = document.getElementById("units").value;
+
+    if (newSystem === unitSystem) return;
+
+    const Dinput = document.getElementById("D");
+    const Tinput = document.getElementById("T");
+    const kinput = document.getElementById("k");
+
+    let D = parseFloat(Dinput.value);
+    let T = parseFloat(Tinput.value);
+    let k = parseFloat(kinput.value);
+
+    if (newSystem === "imperial") {
+        // Convert mm → inch
+        D = D / 25.4;
+        T = T / 25.4;
+        k = k / 25.4;
+
+        // Blade diameter: 2 decimals in inch mode
+        Dinput.value = D.toFixed(2);
+
+        // Allow decimals in inch mode
+        Dinput.step = "0.01";
+
+    } else {
+        // Convert inch → mm
+        D = D * 25.4;
+        T = T * 25.4;
+        k = k * 25.4;
+
+        // Blade diameter: integer in mm mode
+        Dinput.value = Math.round(D);
+
+        // Integer step in mm mode
+        Dinput.step = "1";
+    }
+
+    Tinput.value = T.toFixed(2);
+    kinput.value = k.toFixed(2);
+
+    unitSystem = newSystem;
+
+    setLanguage();   // refresh labels with correct unit
+}
+
+const translations = {
+    fi: {
+        title: "Pöytäsahan Geometriavisualisoija",
+        blade: "Terän Halkaisija (D)",
+        thickness: "Työkappaleen Paksuus (T)",
+        k: "Terä Materiaalin Yläpuolella (k)",
+        button: "Laske ja Piirrä",
+        result: "Vaakasuuntainen Erotus (Δ)"
+    },
+    en: {
+        title: "Table Saw Geometry Visualizer",
+        blade: "Blade Diameter (D)",
+        thickness: "Workpiece Thickness (T)",
+        k: "Blade Above Material (k)",
+        button: "Calculate & Draw",
+        result: "Horizontal Difference (Δ)"
+    },
+    de: {
+        title: "Tischkreissäge Geometrie-Visualizer",
+        blade: "Sägeblattdurchmesser (D)",
+        thickness: "Werkstückdicke (T)",
+        k: "Sägeblatt über Material (k)",
+        button: "Berechnen & Zeichnen",
+        result: "Horizontale Differenz (Δ)"
+    },
+	es: {
+		title: "Visualizador de Geometría de Sierra de Mesa",
+		blade: "Diámetro de Hoja (D)",
+		thickness: "Espesor de Pieza (T)",
+		k: "Hoja Sobre el Material (k)",
+		button: "Calcular y Dibujar",
+		result: "Diferencia Horizontal (Δ)"
+	},
+};
+
+function formatInputsOnLoad() {
+    const Dinput = document.getElementById("D");
+    const Tinput = document.getElementById("T");
+    const kinput = document.getElementById("k");
+
+    // Workpiece + k → always 2 decimals
+    [Tinput, kinput].forEach(input => {
+        const value = parseFloat(input.value);
+        if (!isNaN(value)) {
+            input.value = value.toFixed(2);
+        }
+    });
+}
+function detectSystemLanguage() {
+    const lang = navigator.language || navigator.userLanguage;
+    const short = lang.substring(0, 2).toLowerCase();
+
+    if (translations[short]) {
+        return short;
+    }
+    return "en"; // fallback
+}
+function setLanguage() {
+    const lang = document.getElementById("lang").value;
+    const t = translations[lang];
+
+    const unitText = unitSystem === "metric" ? "mm" : "in";
+
+    document.getElementById("title").innerText = t.title;
+    document.getElementById("bladeLabel").innerText = t.blade + " " + unitText;
+    document.getElementById("thicknessLabel").innerText = t.thickness + " " + unitText;
+    document.getElementById("kLabel").innerText = t.k + " " + unitText;
+    document.getElementById("calcButton").innerText = t.button;
+
+    calculate();
+}
+
+	// Allow Enter key to trigger calculation
+	document.querySelectorAll("input").forEach(input => {
+		input.addEventListener("keydown", function(event) {
+			if (event.key === "Enter") {
+				calculate();
+			}
+		});
+	});
+
+	// Force correct decimals when leaving input
+	document.querySelectorAll("input").forEach(input => {
+    input.addEventListener("blur", function () {
+
+        const value = parseFloat(this.value);
+        if (isNaN(value)) return;
+
+        if (this.id === "D") {
+
+            if (unitSystem === "imperial") {
+                this.value = value.toFixed(2);   // 2 decimals in inch
+            } else {
+                this.value = Math.round(value);  // integer in mm
+            }
+
+        } else {
+            this.value = value.toFixed(2);       // T and k always 2 decimals
+        }
+
+    });
+});
+
+function formatNumber(n) {
+    const lang = document.getElementById("lang").value;
+
+    if (unitSystem === "imperial") {
+        n = mmToInch(n);
+    }
+
+    return n.toLocaleString(lang, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+function calculate() {
+
+    let D = parseFloat(document.getElementById("D").value);
+    let T = parseFloat(document.getElementById("T").value);
+    let k = parseFloat(document.getElementById("k").value);
+
+    // Convert inputs to mm if imperial selected
+    if (unitSystem === "imperial") {
+        D = D * 25.4;
+        T = T * 25.4;
+        k = k * 25.4;
+    }
+
+    const R = D / 2;
+
+    // ===== MAX CENTER HEIGHT LIMIT =====
+    // T + k must be <= R - 20mm
+    const maxH = R - 20;
+
+    if (T + k > maxH) {
+
+        k = maxH - T;
+
+        if (k < 0) k = 0;
+
+        // Write corrected k back to input
+        if (unitSystem === "imperial") {
+            document.getElementById("k").value = (k / 25.4).toFixed(2);
+        } else {
+            document.getElementById("k").value = k.toFixed(2);
+        }
+    }
+
+    const H = T + k;
+
+    const delta =
+        Math.sqrt(Math.max(0, k * (D - k))) -
+        Math.sqrt(Math.max(0, (T + k) * (D - T - k)));
+
+    const lang = document.getElementById("lang").value;
+    const t = translations[lang];
+
+    document.getElementById("result").innerHTML =
+        t.result + " = <span class='result-number'>" +
+        formatNumber(delta) +
+        "</span>" + getUnitLabel();
+
+    drawDiagram(D, T, H, delta);
+}
+
+function drawArrow(ctx, x, y, dir) {
+    const s = 8;
+    ctx.beginPath();
+    if (dir === "up") {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - s, y + s);
+        ctx.lineTo(x + s, y + s);
+    } else {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - s, y - s);
+        ctx.lineTo(x + s, y - s);
+    }
+    ctx.closePath();
+    ctx.fill();
+}
+
+function drawDiagram(D, T, H, delta) {
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const R = D / 2;
+    const scale = 2.4;
+
+    const centerX = 560;
+    const tableY = 460;
+    const centerY = tableY + (R - H) * scale;
+
+    ctx.font = "28px sans-serif";
+    ctx.fillStyle = "#000";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 2;
+
+    ctx.fillRect(0, tableY, canvas.width, 6);
+
+    const topY = tableY - T * scale;
+    const yFromCenter = (centerY - topY) / scale;
+    const xReal = Math.sqrt(Math.max(0, R*R - yFromCenter*yFromCenter));
+    const topContactX = centerX - xReal * scale;
+
+    const pieceWidth = 240;
+    const pieceX = topContactX - pieceWidth;
+
+    const woodHeight = T * scale;
+
+    // ===== REALISTIC WOOD WORKPIECE =====
+
+    const gradient = ctx.createLinearGradient(pieceX, topY, pieceX, topY + woodHeight);
+    gradient.addColorStop(0, "#e6b17a");
+    gradient.addColorStop(0.5, "#d69a5f");
+    gradient.addColorStop(1, "#c4834a");
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(pieceX, topY, pieceWidth, woodHeight);
+
+    // Subtle wood grain
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(pieceX, topY, pieceWidth, woodHeight);
+    ctx.clip();
+
+    ctx.strokeStyle = "rgba(110, 60, 25, 0.25)";
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i < woodHeight; i += 8) {
+        ctx.beginPath();
+        ctx.moveTo(pieceX, topY + i + Math.sin(i * 0.1) * 2);
+        ctx.lineTo(pieceX + pieceWidth, topY + i + Math.cos(i * 0.1) * 2);
+        ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Edge shading
+    ctx.strokeStyle = "rgba(70,40,20,0.7)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pieceX, topY, pieceWidth, woodHeight);
+
+    // Top highlight
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(pieceX, topY, pieceWidth, 4);
+
+    // ===== REALISTIC SAW BLADE =====
+
+	ctx.save();
+	ctx.globalAlpha = 0.6;   // 60% opacity (change between 0.5–0.7 if you like)
+
+	// Metallic gradient
+	const bladeGradient = ctx.createRadialGradient(
+		centerX, centerY, R * scale * 0.2,
+		centerX, centerY, R * scale
+	);
+	bladeGradient.addColorStop(0, "#f5f7fa");
+	bladeGradient.addColorStop(0.4, "#d6dbe0");
+	bladeGradient.addColorStop(0.7, "#b8c0c8");
+	bladeGradient.addColorStop(1, "#8f9aa6");
+
+	ctx.fillStyle = bladeGradient;
+	ctx.beginPath();
+	ctx.arc(centerX, centerY, R * scale, 0, Math.PI * 2);
+	ctx.fill();
+
+	// ===== REALISTIC TILTED TEETH =====
+
+	const teethCount = 50;
+	const outerR = R * scale;
+	const toothDepth = 14;          // how deep tooth goes
+	const innerR = outerR - toothDepth;
+
+	ctx.fillStyle = "#d9dee3";
+	ctx.strokeStyle = "#9aa3ab";
+	ctx.lineWidth = 1;
+
+	for (let i = 0; i < teethCount; i++) {
+
+		const baseAngle = (i / teethCount) * Math.PI * 2;
+
+		const hook = -0.08;      // forward tilt (hook angle)
+		const tipFlat = 0.015;  // small flat carbide tip
+		const baseWidth = 0.06; // base width
+
+		// Tip center (slightly forward)
+		const tipAngle = baseAngle + hook;
+
+		// Flat tip edges
+		const tipLeftAngle  = tipAngle - tipFlat;
+		const tipRightAngle = tipAngle + tipFlat;
+
+		// Base angles
+		const baseLeftAngle  = baseAngle - baseWidth;
+		const baseRightAngle = baseAngle + baseWidth;
+
+		const xTipLeft  = centerX + Math.cos(tipLeftAngle)  * outerR;
+		const yTipLeft  = centerY + Math.sin(tipLeftAngle)  * outerR;
+
+		const xTipRight = centerX + Math.cos(tipRightAngle) * outerR;
+		const yTipRight = centerY + Math.sin(tipRightAngle) * outerR;
+
+		const xBaseLeft  = centerX + Math.cos(baseLeftAngle)  * innerR;
+		const yBaseLeft  = centerY + Math.sin(baseLeftAngle)  * innerR;
+
+		const xBaseRight = centerX + Math.cos(baseRightAngle) * innerR;
+		const yBaseRight = centerY + Math.sin(baseRightAngle) * innerR;
+
+		ctx.beginPath();
+		ctx.moveTo(xBaseLeft, yBaseLeft);
+		ctx.lineTo(xTipLeft, yTipLeft);
+		ctx.lineTo(xTipRight, yTipRight);
+		ctx.lineTo(xBaseRight, yBaseRight);
+		ctx.closePath();
+		ctx.fill();
+		ctx.stroke();
+	}
+	ctx.restore();   // restore full opacity
+
+	// Outer edge
+	ctx.strokeStyle = "#6c7782";
+	ctx.lineWidth = 2;
+	ctx.beginPath();
+	ctx.arc(centerX, centerY, outerR, 0, Math.PI * 2);
+	ctx.stroke();
+
+	// Center hole - solid 30mm
+	const boreRadius = (30 / 2) * scale;   // 30mm diameter
+
+	ctx.fillStyle = "#6b737a";
+	ctx.beginPath();
+	ctx.arc(centerX, centerY, boreRadius, 0, Math.PI * 2);
+	ctx.fill();
+
+	// Shine highlight
+	ctx.beginPath();
+	ctx.arc(centerX - outerR * 0.3, centerY - outerR * 0.3, outerR * 0.4, 0, Math.PI * 2);
+	ctx.fillStyle = "rgba(255,255,255,0.08)";
+	ctx.fill();
+
+    const yBottom = (centerY - tableY) / scale;
+    const xBottomReal = Math.sqrt(Math.max(0, R*R - yBottom*yBottom));
+    const bottomX = centerX - xBottomReal * scale;
+
+    const deltaY = topY - 80;
+
+    ctx.strokeStyle = "red";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(topContactX, deltaY);
+    ctx.lineTo(bottomX, deltaY);
+    ctx.stroke();
+
+    ctx.setLineDash([6,6]);
+    ctx.beginPath();
+    ctx.moveTo(topContactX, topY);
+    ctx.lineTo(topContactX, deltaY);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(bottomX, tableY);
+    ctx.lineTo(bottomX, deltaY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "red";
+    ctx.font = "30px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Δ = " + formatNumber(delta) + getUnitLabel(), (topContactX + bottomX)/2, deltaY - 55);
+	
+	// Small delta symbol above red line
+	ctx.font = "24px Arial";
+	ctx.fillStyle = "red";
+	ctx.textAlign = "center";
+	ctx.fillText("Δ", (topContactX + bottomX) / 2, deltaY - 5);
+
+    ctx.strokeStyle = "#000";
+    ctx.fillStyle = "#000";
+
+    const dimX = pieceX - 25;
+
+    ctx.beginPath();
+    ctx.moveTo(dimX, topY);
+    ctx.lineTo(dimX, topY + woodHeight);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(dimX, topY);
+    ctx.lineTo(dimX - 6, topY - 10);
+    ctx.lineTo(dimX + 6, topY - 10);
+    ctx.closePath();
+    ctx.fill();
+	
+	// ===== FEED DIRECTION ARROW (LEFT → RIGHT) =====
+
+	const arrowY = tableY + 35;        // position slightly above table
+	const arrowStartX = pieceX - 200;   // start left of workpiece
+	const arrowEndX = pieceX + pieceWidth - 40;
+
+	ctx.strokeStyle = "#000";
+	ctx.fillStyle = "#000";
+	ctx.lineWidth = 4;
+
+	// Main arrow line
+	ctx.beginPath();
+	ctx.moveTo(arrowStartX, arrowY);
+	ctx.lineTo(arrowEndX, arrowY);
+	ctx.stroke();
+
+	// Arrow head
+	ctx.beginPath();
+	ctx.moveTo(arrowEndX, arrowY);
+	ctx.lineTo(arrowEndX - 18, arrowY - 12);
+	ctx.lineTo(arrowEndX - 18, arrowY + 12);
+	ctx.closePath();
+	ctx.fill();
+
+    ctx.font = "30px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(formatNumber(T) + getUnitLabel(), dimX + 10, topY - 10);
+
+    const topBladeY = centerY - R * scale;
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, tableY);
+    ctx.lineTo(centerX, topBladeY);
+    ctx.stroke();
+
+    drawArrow(ctx, centerX, tableY, "up");
+    drawArrow(ctx, centerX, topBladeY, "down");
+
+    ctx.fillText(formatNumber(H) + getUnitLabel(), centerX + 15, topBladeY - 10);
+}
+
+formatInputsOnLoad();
+const systemLang = detectSystemLanguage();
+document.getElementById("lang").value = systemLang;
+setLanguage();
+calculate();
+
+const Dinput = document.getElementById("D");
+
+Dinput.addEventListener("blur", function () {
+
+    let value = parseFloat(Dinput.value);
+    if (isNaN(value)) return;
+
+    if (unitSystem === "imperial") {
+        Dinput.value = value.toFixed(2);
+    } else {
+        Dinput.value = Math.round(value);
+    }
+
+});
+
+</script>
+
+</body>
+</html>
